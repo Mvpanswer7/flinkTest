@@ -1,0 +1,59 @@
+pipeline {
+    agent any
+    tools{
+	maven 'maven'	
+	}
+    parameters {
+    	choice(name: 'deploy_env', choices: "deploy", description: 'deploy:master主干上的固定选项')
+	string(defaultValue: '${version}', name: 'TAGversion', description: 'rb-${version}的${version}部分；\n此次代码发布的版本号，也作为git tag和image tag ' )
+	string(defaultValue: '自动构建提交信息未填写', name: 'cur_tagmsg', description: '提交的信息，必填。' )
+    	 }
+    environment {
+        branch = 'master'
+    }
+    
+    stages {
+        stage ('gitlab') {
+            steps {
+		echo "${branch}"
+		git branch: branch, credentialsId: 'c061f10b-61bf-45bb-8ef5-56e558dbcf3c', url: 'git@git.avlyun.org:inf/insight-flinkflow.git'
+                sh("git branch") 
+            }
+        }
+	stage ('build') {
+	tools{
+		maven 'maven'
+		}
+	    steps {
+		sh "sh ./ci/pre-build.sh"
+		sh "mvn clean surefire-report:report findbugs:findbugs pmd:pmd deploy"
+		}
+	}
+	stage ('post build archive the finished product'){
+	    steps {
+		archiveArtifacts 'target/**.jar'
+		}
+	}
+	stage ('git pulisher tag') {
+	    steps {
+		sh 'git tag -a $TAGversion -f -m "$cur_tagmsg"'
+		sh 'git push https://git.avlyun.org/inf/insight-flinkflow.git $TAGversion'
+		}
+	}
+	stage ('检测代码findbugs'){
+	    steps {
+		findbugs canComputeNew: false, defaultEncoding: '', excludePattern: '', healthy: '', includePattern: '', pattern: 'target/findbugsXml.xml', unHealthy: ''
+		}
+	}
+	stage('检测代码junit test report') {            
+            steps {                
+		sh 'echo "暂无单元测试"'
+            }        
+        }
+        stage('检测代码pmd results') {            
+            steps {                
+                pmd canComputeNew: false, defaultEncoding: '', healthy: '', pattern: 'target/pmd.xml', unHealthy: ''            
+            }        
+        }
+	}
+}
